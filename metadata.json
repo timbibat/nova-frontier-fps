@@ -1,0 +1,6 @@
+{
+  "name": "Nova Frontier FPS",
+  "description": "A high-octane, multiplayer first-person shooter built with Three.js and Socket.io. Engage in real-time battles in a futuristic arena.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
