@@ -49,7 +49,7 @@ export interface GameState {
 }
 
 export interface ServerToClientEvents {
-  'game:init': (state: GameState, userId: string) => void;
+  'game:init': (state: GameState, userId: string, arena: string) => void;
   'game:update': (state: GameState) => void;
   'player:joined': (player: Player) => void;
   'player:left': (id: string) => void;
@@ -62,6 +62,6 @@ export interface ClientToServerEvents {
   'player:update': (data: { position: [number, number, number], rotation: [number, number, number], weapon: WeaponType }) => void;
   'player:shoot': (data: { id: string, position: [number, number, number], velocity: [number, number, number], damage: number }) => void;
   'player:melee': (data: { id: string }) => void; // victimId if hit is determined client-side for better feel, or just trigger
-  'player:join': (name: string) => void;
+  'player:join': (name: string, arena: string) => void;
   'player:switch': (weapon: WeaponType) => void;
 }
