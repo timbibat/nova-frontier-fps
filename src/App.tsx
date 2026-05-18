@@ -209,6 +209,10 @@ export default function App() {
              <div className="uppercase border border-slate-800 px-2 py-0.5">Sector_Active</div>
              <div className="uppercase border border-slate-800 px-2 py-0.5">Neural_Links_Stable</div>
           </div>
+
+          <div className="mt-6 flex justify-center gap-4 grayscale opacity-40 font-mono text-[9px]">
+             <div className="uppercase border border-slate-800 px-2 py-0.5">Created by: Timothy Bibat</div>
+          </div>
         </div>
       </div>
     );
