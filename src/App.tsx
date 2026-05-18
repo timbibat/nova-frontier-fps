@@ -9,6 +9,7 @@ import RemotePlayer from './components/RemotePlayer.tsx';
 import HUD from './components/HUD.tsx';
 import BotRenderer from './components/BotRenderer.tsx';
 import ProjectileRenderer from './components/ProjectileRenderer.tsx';
+import { audioSynth } from './utils/audio.ts';
 
 const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io();
 
@@ -39,8 +40,34 @@ export default function App() {
     return () => {
       socket.off('game:init');
       socket.off('game:update');
+      audioSynth.stopBackgroundMusic();
     };
   }, []);
+
+  // Spatial Combat Feedback Sounds (Hitmarker and Kills)
+  useEffect(() => {
+    const handlePlayerHit = (data: { victimId: string; attackerId: string; damage: number; health: number }) => {
+      if (data.attackerId === myId) {
+        audioSynth.playHitMarkerSound();
+      }
+    };
+
+    const handlePlayerKilled = (data: { victimId: string; attackerId: string }) => {
+      if (data.attackerId === myId) {
+        // Double-tap bip for kills!
+        audioSynth.playHitMarkerSound();
+        setTimeout(() => audioSynth.playHitMarkerSound(), 60);
+      }
+    };
+
+    socket.on('player:hit', handlePlayerHit);
+    socket.on('player:killed', handlePlayerKilled);
+
+    return () => {
+      socket.off('player:hit', handlePlayerHit);
+      socket.off('player:killed', handlePlayerKilled);
+    };
+  }, [myId]);
 
   // Listen to pointer lock changes to trigger Pause Menu
   useEffect(() => {
@@ -98,6 +125,7 @@ export default function App() {
     if (!playerName.trim()) return;
     socket.emit('player:join', playerName, selectedArena);
     setIsJoined(true);
+    audioSynth.startBackgroundMusic(selectedArena);
   };
 
   if (!isJoined) {
@@ -296,6 +324,7 @@ export default function App() {
                 onClick={() => {
                   setIsJoined(false);
                   setIsPaused(false);
+                  audioSynth.stopBackgroundMusic();
                 }}
                 className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg transition-all uppercase text-xs tracking-wider pointer-events-auto active:scale-98 cursor-pointer border-0"
               >

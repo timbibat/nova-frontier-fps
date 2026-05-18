@@ -22,7 +22,7 @@ export const WEAPONS: Record<WeaponType, Weapon> = {
     name: 'Plasma Blade',
     damage: 60,
     fireRate: 600,
-    range: 3,
+    range: 6,
     isMelee: true
   }
 };

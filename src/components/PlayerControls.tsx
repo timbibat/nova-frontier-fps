@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import { ClientToServerEvents, ServerToClientEvents, WeaponType } from '../types.ts';
 import { WEAPONS } from '../constants.ts';
 import WeaponModel from './WeaponModel.tsx';
+import { audioSynth } from '../utils/audio.ts';
 
 const SPEED = 10;
 const JUMP_FORCE = 12;
@@ -25,8 +26,13 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
   const [currentWeapon, setCurrentWeapon] = useState<WeaponType>(WeaponType.PISTOL);
   const lastFired = useRef<number>(0);
   const weaponGroupRef = useRef<THREE.Group>(null);
+  const localWeaponModelRef = useRef<THREE.Group>(null);
 
   const isMouseDown = useRef(false);
+  const shouldFire = useRef(false);
+  const swingProgress = useRef(0);
+  const isSwinging = useRef(false);
+  const recoilProgress = useRef(0);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -38,7 +44,10 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
       if (e.code === 'Digit3') setCurrentWeapon(WeaponType.BLADE);
     };
     const handleKeyUp = (e: KeyboardEvent) => setKeys((k) => ({ ...k, [e.code]: false }));
-    const handleMouseDown = () => { isMouseDown.current = true; };
+    const handleMouseDown = () => { 
+      isMouseDown.current = true; 
+      shouldFire.current = true;
+    };
     const handleMouseUp = () => { isMouseDown.current = false; };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -80,19 +89,17 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
     const weapon = WEAPONS[currentWeapon];
 
     // Attacking
-    if (isMouseDown.current) { // Left click
+    if (isMouseDown.current || shouldFire.current) { // Left click
       const now = Date.now();
       if (now - lastFired.current > weapon.fireRate) {
         lastFired.current = now;
+        shouldFire.current = false;
 
         if (weapon.isMelee) {
           socket.emit('player:melee', { id: nanoid() });
-          
-          // Melee swing animation trigger
-          if (weaponGroupRef.current) {
-            weaponGroupRef.current.rotation.x = -0.5;
-            setTimeout(() => { if (weaponGroupRef.current) weaponGroupRef.current.rotation.x = 0; }, 100);
-          }
+          audioSynth.playBladeSwingSound();
+          isSwinging.current = true;
+          swingProgress.current = 0;
         } else {
           const direction = new THREE.Vector3();
           camera.getWorldDirection(direction);
@@ -104,12 +111,46 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
             damage: weapon.damage
           });
 
-          // Recoil visual
-          if (weaponGroupRef.current) {
-            weaponGroupRef.current.position.z += 0.1;
-            setTimeout(() => { if (weaponGroupRef.current) weaponGroupRef.current.position.z -= 0.1; }, 50);
-          }
+          audioSynth.playShootSound(currentWeapon);
+
+          // Trigger firearm recoil kickback
+          recoilProgress.current = 0.18;
         }
+      } else {
+        if (!isMouseDown.current) {
+          shouldFire.current = false;
+        }
+      }
+    }
+
+    // Smooth animations inside useFrame
+    if (localWeaponModelRef.current) {
+      if (recoilProgress.current > 0) {
+        recoilProgress.current = THREE.MathUtils.lerp(recoilProgress.current, 0, delta * 15);
+      }
+
+      if (isSwinging.current) {
+        // Swing duration: ~0.2 seconds (increment delta * 5)
+        swingProgress.current += delta * 5;
+        if (swingProgress.current >= 1) {
+          isSwinging.current = false;
+          swingProgress.current = 0;
+          localWeaponModelRef.current.position.set(0, 0, 0);
+          localWeaponModelRef.current.rotation.set(0, 0, 0);
+        } else {
+          // Curved sword slash rotation and displacement
+          const angle = Math.sin(swingProgress.current * Math.PI);
+          localWeaponModelRef.current.rotation.x = angle * -1.2;
+          localWeaponModelRef.current.rotation.y = angle * 0.8;
+          localWeaponModelRef.current.rotation.z = angle * -0.5;
+
+          localWeaponModelRef.current.position.x = angle * -0.3;
+          localWeaponModelRef.current.position.y = angle * 0.2;
+          localWeaponModelRef.current.position.z = angle * 0.3;
+        }
+      } else {
+        localWeaponModelRef.current.position.set(0, 0, recoilProgress.current);
+        localWeaponModelRef.current.rotation.set(0, 0, 0);
       }
     }
 
@@ -154,7 +195,9 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
 
   return (
     <group ref={weaponGroupRef}>
-      <WeaponModel type={currentWeapon} isLocal />
+      <group ref={localWeaponModelRef}>
+        <WeaponModel type={currentWeapon} isLocal />
+      </group>
     </group>
   );
 }

@@ -115,7 +115,9 @@ async function startServer() {
       const attacker = state.players[socket.id];
       if (!attacker || attacker.health <= 0) return;
 
-      // Server-side melee range check
+      console.log(`[MELEE] Player ${attacker.name} swung plasma blade in ${arena}. Position: [${attacker.position.map(n => n.toFixed(1))}]`);
+
+      // Server-side melee range check (increased to 6 units, distSq < 36)
       for (const id in state.players) {
         if (id === socket.id) continue;
         const victim = state.players[id];
@@ -126,9 +128,13 @@ async function startServer() {
           Math.pow(attacker.position[1] - victim.position[1], 2) +
           Math.pow(attacker.position[2] - victim.position[2], 2);
 
-        if (distSq < 9) { // 3 unit range (3^2 = 9)
+        const dist = Math.sqrt(distSq);
+        console.log(`  -> Distance to player ${victim.name}: ${dist.toFixed(2)} units`);
+
+        if (distSq < 36) { // 6 unit range
           const damage = 60;
           victim.health -= damage;
+          console.log(`  💥 [HIT PLAYER] Dealt ${damage} damage to player ${victim.name}! Remaining health: ${victim.health}`);
 
           if (victim.health <= 0) {
             victim.health = 0;
@@ -141,6 +147,40 @@ async function startServer() {
               attackerId: socket.id,
               damage,
               health: victim.health
+            });
+          }
+        }
+      }
+
+      // Server-side melee range check for bots
+      for (let i = state.bots.length - 1; i >= 0; i--) {
+        const bot = state.bots[i];
+        if (bot.health <= 0) continue;
+
+        const distSq =
+          Math.pow(attacker.position[0] - bot.position[0], 2) +
+          Math.pow(attacker.position[1] - bot.position[1], 2) +
+          Math.pow(attacker.position[2] - bot.position[2], 2);
+
+        const dist = Math.sqrt(distSq);
+        console.log(`  -> Distance to bot ${bot.name}: ${dist.toFixed(2)} units`);
+
+        if (distSq < 36) { // 6 unit range
+          const damage = 60;
+          bot.health -= damage;
+          console.log(`  💥 [HIT BOT] Dealt ${damage} damage to bot ${bot.name}! Remaining health: ${bot.health}`);
+
+          if (bot.health <= 0) {
+            state.bots.splice(i, 1);
+            setTimeout(() => spawnBot(arena), 5000);
+            attacker.score += 50;
+            io.to(arena).emit("player:killed", { victimId: bot.id, attackerId: socket.id });
+          } else {
+            io.to(arena).emit("player:hit", {
+              victimId: bot.id,
+              attackerId: socket.id,
+              damage,
+              health: bot.health
             });
           }
         }
