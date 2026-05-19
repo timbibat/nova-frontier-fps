@@ -8,7 +8,7 @@ interface Props {
   me: Player;
   players: Player[];
   bots: Bot[];
-  arenaType: 'space' | 'desert';
+  arenaType: 'space' | 'desert' | 'forest';
   roomCode?: string;
 }
 
@@ -245,7 +245,7 @@ export default function HUD({ me, players, bots, arenaType, roomCode }: Props) {
             <span>TACTICAL RADAR</span>
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
           </div>
-          <div>Sector: <span className="text-white font-bold">{arenaType === 'desert' ? 'SANDSTORM WASTES' : 'NEON VOID'}</span></div>
+          <div>Sector: <span className="text-white font-bold">{arenaType === 'desert' ? 'SANDSTORM WASTES' : arenaType === 'forest' ? 'OVERGROWN RUINS' : 'NEON VOID'}</span></div>
           {roomCode && (
             <div className="text-amber-400 font-bold border border-amber-500/30 px-1.5 py-0.5 rounded bg-amber-500/5 mt-0.5 mb-0.5 text-center tracking-widest animate-pulse">
               Link Key: {roomCode}

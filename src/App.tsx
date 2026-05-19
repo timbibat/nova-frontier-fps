@@ -30,8 +30,8 @@ export default function App() {
   const [playerName, setPlayerName] = useState('');
   const [isPaused, setIsPaused] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
-  const [selectedArena, setSelectedArena] = useState<'space' | 'desert'>('space');
-  const [arenaType, setArenaType] = useState<'space' | 'desert'>('space');
+  const [selectedArena, setSelectedArena] = useState<'space' | 'desert' | 'forest'>('space');
+  const [arenaType, setArenaType] = useState<'space' | 'desert' | 'forest'>('space');
 
   // Online Private Room States
   const [matchMode, setMatchMode] = useState<'public' | 'room'>('public');
@@ -57,7 +57,7 @@ export default function App() {
     socket.on('game:init', (state, id, arena, roomCode) => {
       setGameState(state);
       setMyId(id);
-      setArenaType(arena as 'space' | 'desert');
+      setArenaType(arena as 'space' | 'desert' | 'forest');
       setActiveRoomCode(roomCode || null);
       setIsJoined(true);
       setRoomError(null);
@@ -284,6 +284,24 @@ export default function App() {
                       selectedArena === 'desert' ? 'bg-orange-500 shadow-[0_0_8px_#ea580c]' : 'bg-slate-800'
                     }`}></div>
                   </button>
+
+                  {/* Forest Arena Button */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedArena('forest')}
+                    className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none col-span-2 ${
+                      selectedArena === 'forest'
+                        ? 'border-green-500 bg-green-950/20 shadow-lg shadow-green-500/10'
+                        : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 rounded-full blur-xl pointer-events-none"></div>
+                    <div className="text-xs font-mono font-bold tracking-wider text-green-400 uppercase">Overgrown Ruins</div>
+                    <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Lush green forest, scattered rocks and trunks.</div>
+                    <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                      selectedArena === 'forest' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-slate-800'
+                    }`}></div>
+                  </button>
                 </div>
               </div>
             )}
@@ -369,6 +387,23 @@ export default function App() {
                             selectedArena === 'desert' ? 'bg-orange-500 shadow-[0_0_8px_#ea580c]' : 'bg-slate-800'
                           }`}></div>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArena('forest')}
+                          className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none col-span-2 ${
+                            selectedArena === 'forest'
+                              ? 'border-green-500 bg-green-950/20 shadow-lg shadow-green-500/10'
+                              : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/5 rounded-full blur-xl pointer-events-none"></div>
+                          <div className="text-xs font-mono font-bold tracking-wider text-green-400 uppercase">Overgrown Ruins</div>
+                          <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Lush green forest, scattered rocks and trunks.</div>
+                          <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                            selectedArena === 'forest' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-slate-800'
+                          }`}></div>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -428,7 +463,14 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-black overflow-hidden relative">
       <Canvas shadows camera={{ fov: 75, position: [0, 1.6, 5] }}>
-        {arenaType === 'desert' ? (
+        {arenaType === 'forest' ? (
+          <>
+            <Sky sunPosition={[100, 20, 100]} inclination={0.4} azimuth={0.5} mieCoefficient={0.005} rayleigh={1} />
+            <fog attach="fog" args={["#22c55e", 15, 75]} />
+            <ambientLight intensity={0.7} color="#dcfce7" />
+            <pointLight position={[10, 15, 10]} intensity={2.5} color="#fef08a" castShadow />
+          </>
+        ) : arenaType === 'desert' ? (
           <>
             <Sky sunPosition={[100, 20, 100]} inclination={0.6} azimuth={0.25} mieCoefficient={0.005} rayleigh={2} />
             <fog attach="fog" args={["#7c2d12", 15, 75]} />

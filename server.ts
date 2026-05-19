@@ -28,12 +28,14 @@ async function startServer() {
   // Game States mapped per Arena
   const states: Record<string, GameState> = {
     space: { players: {}, projectiles: [], bots: [] },
-    desert: { players: {}, projectiles: [], bots: [] }
+    desert: { players: {}, projectiles: [], bots: [] },
+    forest: { players: {}, projectiles: [], bots: [] }
   };
 
-  const roomArenas: Record<string, 'space' | 'desert'> = {
+  const roomArenas: Record<string, 'space' | 'desert' | 'forest'> = {
     space: 'space',
-    desert: 'desert'
+    desert: 'desert',
+    forest: 'forest'
   };
 
   const NUM_BOTS = 3;
@@ -53,11 +55,12 @@ async function startServer() {
   for (let i = 0; i < NUM_BOTS; i++) {
     spawnBot("space");
     spawnBot("desert");
+    spawnBot("forest");
   }
 
   io.on("connection", (socket) => {
     socket.on("player:join", (name, arena, roomCode) => {
-      let chosenArena: 'space' | 'desert' = arena === "desert" ? "desert" : "space";
+      let chosenArena: 'space' | 'desert' | 'forest' = arena === "desert" ? "desert" : arena === "forest" ? "forest" : "space";
       let roomKey: string = chosenArena;
 
       if (roomCode) {

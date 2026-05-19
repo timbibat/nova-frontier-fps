@@ -161,7 +161,7 @@ class SoundSynthesizer {
     }
   }
 
-  public startBackgroundMusic(arena: 'space' | 'desert') {
+  public startBackgroundMusic(arena: 'space' | 'desert' | 'forest') {
     try {
       this.initContext();
       this.stopBackgroundMusic(); // clear existing
