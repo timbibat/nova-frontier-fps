@@ -261,15 +261,12 @@ export default function App() {
         <PointerLockControls />
       </Canvas>
 
-      <HUD me={me} players={Object.values(gameState.players)} />
-
-      {/* HUD Extra Overlay */}
-      <div className="absolute top-4 left-4 flex flex-col gap-1 text-[9px] font-mono text-cyan-500/50 uppercase pointer-events-none">
-        <div>System: Delta_0.19</div>
-        <div>Uptime: {Math.floor(performance.now() / 1000)}s</div>
-        <div>Sector: {arenaType === 'desert' ? 'SANDSTORM WASTES' : 'NEON VOID'}</div>
-        <div>Bots Alive: {gameState.bots.length}</div>
-      </div>
+      <HUD 
+        me={me} 
+        players={Object.values(gameState.players)} 
+        bots={gameState.bots}
+        arenaType={arenaType}
+      />
 
       {/* Pause Menu Overlay */}
       {isPaused && (

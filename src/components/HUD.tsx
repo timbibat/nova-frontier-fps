@@ -1,14 +1,64 @@
-import { Player, WeaponType } from '../types.ts';
+import { Player, WeaponType, Bot } from '../types.ts';
 import { WEAPONS } from '../constants.ts';
 
 interface Props {
   me: Player;
   players: Player[];
+  bots: Bot[];
+  arenaType: 'space' | 'desert';
 }
 
-export default function HUD({ me, players }: Props) {
+export default function HUD({ me, players, bots, arenaType }: Props) {
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
   const currentWeapon = WEAPONS[me.currentWeapon || WeaponType.PISTOL];
+
+  const MAX_RANGE = 45; // Max tracking distance in world units shown on radar
+
+  const otherPlayers = players.filter((p) => p.id !== me.id && p.health > 0);
+  const activeBots = bots ? bots.filter((b) => b.health > 0) : [];
+
+  const mePos = me.position || [0, 0, 0];
+  const yaw = me.rotation ? me.rotation[1] : 0;
+  const cosYaw = Math.cos(yaw);
+  const sinYaw = Math.sin(yaw);
+
+  const getRadarCoords = (targetPos: [number, number, number], isBot: boolean, id: string) => {
+    const dx = targetPos[0] - mePos[0];
+    const dz = targetPos[2] - mePos[2];
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    // Transform absolute world coordinate delta by player's rotation
+    const rx = dx * cosYaw - dz * sinYaw;
+    const ry = dx * sinYaw + dz * cosYaw;
+
+    const isClamped = dist > MAX_RANGE;
+    const radarDist = Math.min(dist, MAX_RANGE);
+
+    const displayX = (rx / (dist || 1)) * radarDist;
+    const displayY = (ry / (dist || 1)) * radarDist;
+
+    // Convert display position to percentages where (50, 50) is center
+    const left = 50 + (displayX / MAX_RANGE) * 50;
+    const top = 50 + (displayY / MAX_RANGE) * 50;
+
+    // Convert angle to degrees for arrow rotation (standard points UP)
+    const rotationDeg = Math.atan2(displayY, displayX) * (180 / Math.PI) + 90;
+
+    return {
+      id,
+      left,
+      top,
+      isClamped,
+      isBot,
+      rotationDeg,
+      dist,
+    };
+  };
+
+  const radarTargets = [
+    ...otherPlayers.map((p) => getRadarCoords(p.position, false, p.id)),
+    ...activeBots.map((b) => getRadarCoords(b.position, true, b.id)),
+  ];
 
   return (
     <div className="absolute inset-0 pointer-events-none font-mono">
@@ -17,6 +67,110 @@ export default function HUD({ me, players }: Props) {
         <div className="absolute w-full h-[1px] bg-cyan-400 opacity-60"></div>
         <div className="absolute h-full w-[1px] bg-cyan-400 opacity-60"></div>
         <div className="w-1 h-1 bg-cyan-400 rounded-full"></div>
+      </div>
+
+      {/* Tactical Radar HUD Panel */}
+      <div className="absolute top-6 left-6 flex items-start gap-4 pointer-events-none select-none">
+        {/* Radar Circular Display */}
+        <div className="relative w-36 h-36 rounded-full border border-cyan-500/40 bg-slate-950/85 backdrop-blur-md overflow-hidden flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+          {/* Concentric Grid Rings */}
+          <div className="absolute w-full h-full rounded-full border border-cyan-500/10 pointer-events-none"></div>
+          <div className="absolute w-2/3 h-2/3 rounded-full border border-dashed border-cyan-500/15 pointer-events-none"></div>
+          <div className="absolute w-1/3 h-1/3 rounded-full border border-dashed border-cyan-500/15 pointer-events-none"></div>
+          
+          {/* Axis Crosshairs */}
+          <div className="absolute w-full h-[1px] border-t border-dashed border-cyan-500/10 pointer-events-none"></div>
+          <div className="absolute h-full w-[1px] border-l border-dashed border-cyan-500/10 pointer-events-none"></div>
+
+          {/* Radar Sweep Effect */}
+          <div 
+            className="absolute inset-0 rounded-full pointer-events-none origin-center animate-radar-sweep"
+            style={{
+              background: 'conic-gradient(from 0deg, transparent 50%, rgba(6,182,212,0.12) 100%)',
+            }}
+          />
+
+          {/* Central Local Player Indicator */}
+          <div className="absolute w-3 h-3 flex items-center justify-center pointer-events-none z-20">
+            {/* Ping animation under the player icon */}
+            <div className="absolute w-full h-full bg-cyan-400/25 rounded-full animate-ping pointer-events-none"></div>
+            {/* Mini vector arrow pointing straight up (viewer POV is locked looking forward) */}
+            <svg className="w-3 h-3 text-cyan-400 drop-shadow-[0_0_4px_#22d3ee]" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 22h20L12 2z" />
+            </svg>
+          </div>
+
+          {/* Target Blips */}
+          {radarTargets.map((target) => (
+            <div
+              key={target.id}
+              className="absolute pointer-events-none z-10 transition-all duration-75"
+              style={{
+                left: `${target.left}%`,
+                top: `${target.top}%`,
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              {target.isClamped ? (
+                // Out of range indicators (pointing arrows along the radar edge)
+                <div 
+                  className="w-3 h-3 flex items-center justify-center"
+                  style={{
+                    transform: `rotate(${target.rotationDeg}deg)`,
+                  }}
+                >
+                  <svg 
+                    className={`w-2.5 h-2.5 ${
+                      target.isBot 
+                        ? 'text-red-500 drop-shadow-[0_0_3px_rgba(239,68,68,0.8)]' 
+                        : 'text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.8)]'
+                    }`} 
+                    viewBox="0 0 24 24" 
+                    fill="currentColor"
+                  >
+                    <path d="M12 2L2 22h20L12 2z" />
+                  </svg>
+                </div>
+              ) : (
+                // In range indicators (flashing blips)
+                <div className="relative flex items-center justify-center w-3 h-3">
+                  {target.isBot && (
+                    <div className="absolute w-5 h-5 rounded-full border border-red-500/20 animate-ping opacity-60 pointer-events-none"></div>
+                  )}
+                  <div 
+                    className={`w-2 h-2 rounded-full shadow-lg ${
+                      target.isBot 
+                        ? 'bg-red-500 shadow-red-500/50 animate-pulse' 
+                        : 'bg-amber-500 shadow-amber-500/50'
+                    }`}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* HUD Tactical Info Box */}
+        <div className="flex flex-col gap-1 text-[9px] font-mono text-cyan-400/80 uppercase bg-slate-950/80 border border-cyan-500/25 p-3 rounded-lg backdrop-blur-md shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+          <div className="text-[10px] font-bold text-cyan-400 tracking-wider border-b border-cyan-500/20 pb-1 mb-1 flex justify-between items-center gap-6">
+            <span>TACTICAL RADAR</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+          </div>
+          <div>Sector: <span className="text-white font-bold">{arenaType === 'desert' ? 'SANDSTORM WASTES' : 'NEON VOID'}</span></div>
+          <div>Active Hostiles: <span className="text-red-500 font-bold">{activeBots.length} BOTS</span></div>
+          <div>Remote Pilots: <span className="text-amber-400 font-bold">{otherPlayers.length} UNITS</span></div>
+          
+          <div className="border-t border-cyan-500/10 mt-1.5 pt-1.5 text-[8px] text-cyan-500/60 space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.8)]"></span>
+              <span>HOSTILE BOT</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shadow-[0_0_4px_rgba(245,158,11,0.8)]"></span>
+              <span>REMOTE PILOT</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Health Bar Wrapper */}
