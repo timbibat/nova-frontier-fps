@@ -13,6 +13,15 @@ import { audioSynth } from './utils/audio.ts';
 
 const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io();
 
+const generateRoomCode = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
 export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [myId, setMyId] = useState<string | null>(null);
@@ -23,23 +32,46 @@ export default function App() {
   const [selectedArena, setSelectedArena] = useState<'space' | 'desert'>('space');
   const [arenaType, setArenaType] = useState<'space' | 'desert'>('space');
 
+  // Online Private Room States
+  const [matchMode, setMatchMode] = useState<'public' | 'room'>('public');
+  const [roomAction, setRoomAction] = useState<'create' | 'join'>('create');
+  const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [createdRoomCode, setCreatedRoomCode] = useState('');
+  const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
+
   const me = gameState?.players[myId || ''];
   const isDead = me && me.health <= 0;
 
   useEffect(() => {
-    socket.on('game:init', (state, id, arena) => {
+    if (matchMode === 'room' && roomAction === 'create' && !createdRoomCode) {
+      setCreatedRoomCode(generateRoomCode());
+    }
+  }, [matchMode, roomAction, createdRoomCode]);
+
+  useEffect(() => {
+    socket.on('game:init', (state, id, arena, roomCode) => {
       setGameState(state);
       setMyId(id);
       setArenaType(arena as 'space' | 'desert');
+      setActiveRoomCode(roomCode || null);
+      setIsJoined(true);
+      setRoomError(null);
     });
 
     socket.on('game:update', (state) => {
       setGameState(state);
     });
 
+    socket.on('room:error', (msg) => {
+      setRoomError(msg);
+      setIsJoined(false);
+    });
+
     return () => {
       socket.off('game:init');
       socket.off('game:update');
+      socket.off('room:error');
       audioSynth.stopBackgroundMusic();
     };
   }, []);
@@ -123,9 +155,24 @@ export default function App() {
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerName.trim()) return;
-    socket.emit('player:join', playerName, selectedArena);
-    setIsJoined(true);
-    audioSynth.startBackgroundMusic(selectedArena);
+
+    if (matchMode === 'public') {
+      socket.emit('player:join', playerName, selectedArena);
+      setIsJoined(true);
+      audioSynth.startBackgroundMusic(selectedArena);
+    } else {
+      if (roomAction === 'create') {
+        socket.emit('player:join', playerName, selectedArena, createdRoomCode);
+        setIsJoined(true);
+        audioSynth.startBackgroundMusic(selectedArena);
+      } else {
+        if (!roomCodeInput.trim()) {
+          setRoomError("Please enter a valid private sector key.");
+          return;
+        }
+        socket.emit('player:join', playerName, '', roomCodeInput);
+      }
+    }
   };
 
   if (!isJoined) {
@@ -141,6 +188,7 @@ export default function App() {
           <p className="text-[10px] text-center text-slate-500 tracking-[0.2em] uppercase mb-8 font-mono">Tactical Sector Combat Simulation</p>
           
           <form onSubmit={handleJoin} className="space-y-6">
+            {/* Pilot Callsign */}
             <div className="space-y-1">
               <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Pilot Callsign</label>
               <input
@@ -152,56 +200,209 @@ export default function App() {
                 className="w-full px-4 py-3 bg-slate-950 border border-slate-800 focus:border-cyan-500/80 rounded-lg outline-none transition-all text-white font-mono text-sm tracking-wide"
                 autoFocus
                 autoComplete="off"
+                required
               />
             </div>
-            
-            <div className="space-y-2">
-              <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Select Combat Sector</label>
-              <div className="grid grid-cols-2 gap-4">
-                {/* Space Arena Button */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedArena('space')}
-                  className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
-                    selectedArena === 'space'
-                      ? 'border-cyan-500 bg-cyan-950/20 shadow-lg shadow-cyan-500/10'
-                      : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
-                  <div className="text-xs font-mono font-bold tracking-wider text-cyan-400 uppercase">Neon Void</div>
-                  <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Space simulation, dark neon styling, floating platforms.</div>
-                  <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
-                    selectedArena === 'space' ? 'bg-cyan-500 shadow-[0_0_8px_#06b6d4]' : 'bg-slate-800'
-                  }`}></div>
-                </button>
 
-                {/* Desert Arena Button */}
+            {/* Neural Gateway tabs */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Neural Gateway Mode</label>
+              <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 border border-slate-800 rounded-lg">
                 <button
                   type="button"
-                  onClick={() => setSelectedArena('desert')}
-                  className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
-                    selectedArena === 'desert'
-                      ? 'border-orange-500 bg-orange-950/20 shadow-lg shadow-orange-500/10'
-                      : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                  onClick={() => { setMatchMode('public'); setRoomError(null); }}
+                  className={`py-2 rounded font-mono text-xs uppercase cursor-pointer border-0 font-bold transition-all ${
+                    matchMode === 'public' 
+                      ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-bold' 
+                      : 'text-slate-500 hover:text-slate-300'
                   }`}
                 >
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500/5 rounded-full blur-xl pointer-events-none"></div>
-                  <div className="text-xs font-mono font-bold tracking-wider text-orange-400 uppercase">Sandstorm Wastes</div>
-                  <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Sunset lighting, clay terracotta fog, sandstone obelisks.</div>
-                  <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
-                    selectedArena === 'desert' ? 'bg-orange-500 shadow-[0_0_8px_#ea580c]' : 'bg-slate-800'
-                  }`}></div>
+                  Public Combat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMatchMode('room'); setRoomError(null); }}
+                  className={`py-2 rounded font-mono text-xs uppercase cursor-pointer border-0 font-bold transition-all ${
+                    matchMode === 'room' 
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30 font-bold' 
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Neural Link Code
                 </button>
               </div>
             </div>
 
+            {/* Error alerts */}
+            {roomError && (
+              <div className="p-3 bg-red-950/20 border border-red-500/40 rounded-lg text-[10px] font-mono text-red-400 uppercase tracking-wide leading-relaxed animate-pulse">
+                💥 TERMINAL ERROR: {roomError}
+              </div>
+            )}
+
+            {/* Public Setup */}
+            {matchMode === 'public' && (
+              <div className="space-y-2 animate-fade-in">
+                <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Select Combat Sector</label>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Space Arena Button */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedArena('space')}
+                    className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
+                      selectedArena === 'space'
+                        ? 'border-cyan-500 bg-cyan-950/20 shadow-lg shadow-cyan-500/10'
+                        : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
+                    <div className="text-xs font-mono font-bold tracking-wider text-cyan-400 uppercase">Neon Void</div>
+                    <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Space simulation, dark neon styling, floating platforms.</div>
+                    <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                      selectedArena === 'space' ? 'bg-cyan-500 shadow-[0_0_8px_#06b6d4]' : 'bg-slate-800'
+                    }`}></div>
+                  </button>
+
+                  {/* Desert Arena Button */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedArena('desert')}
+                    className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
+                      selectedArena === 'desert'
+                        ? 'border-orange-500 bg-orange-950/20 shadow-lg shadow-orange-500/10'
+                        : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500/5 rounded-full blur-xl pointer-events-none"></div>
+                    <div className="text-xs font-mono font-bold tracking-wider text-orange-400 uppercase">Sandstorm Wastes</div>
+                    <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Sunset lighting, clay terracotta fog, sandstone obelisks.</div>
+                    <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                      selectedArena === 'desert' ? 'bg-orange-500 shadow-[0_0_8px_#ea580c]' : 'bg-slate-800'
+                    }`}></div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Room Private Setup */}
+            {matchMode === 'room' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="grid grid-cols-2 gap-2 border-b border-slate-800 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRoomAction('create'); setRoomError(null); }}
+                    className={`py-1.5 font-mono text-[10px] uppercase cursor-pointer border-0 font-bold transition-all ${
+                      roomAction === 'create'
+                        ? 'text-cyan-400 border-b-2 border-cyan-500 pb-1'
+                        : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    Create Link Code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setRoomAction('join'); setRoomError(null); }}
+                    className={`py-1.5 font-mono text-[10px] uppercase cursor-pointer border-0 font-bold transition-all ${
+                      roomAction === 'join'
+                        ? 'text-cyan-400 border-b-2 border-cyan-500 pb-1'
+                        : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    Enter Link Code
+                  </button>
+                </div>
+
+                {roomAction === 'create' && (
+                  <div className="space-y-4 animate-fade-in">
+                    <div className="flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-lg text-center relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent"></div>
+                      <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mb-1">Generated Private Neural Key</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-black font-mono tracking-widest text-cyan-400">{createdRoomCode}</span>
+                        <button
+                          type="button"
+                          onClick={() => setCreatedRoomCode(generateRoomCode())}
+                          className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[8px] font-mono rounded cursor-pointer uppercase text-slate-400 font-bold active:scale-95"
+                        >
+                          Regen
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Sector Architecture Style</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArena('space')}
+                          className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
+                            selectedArena === 'space'
+                              ? 'border-cyan-500 bg-cyan-950/20 shadow-lg shadow-cyan-500/10'
+                              : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
+                          <div className="text-xs font-mono font-bold tracking-wider text-cyan-400 uppercase">Neon Void</div>
+                          <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Space simulation, dark neon styling, floating platforms.</div>
+                          <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                            selectedArena === 'space' ? 'bg-cyan-500 shadow-[0_0_8px_#06b6d4]' : 'bg-slate-800'
+                          }`}></div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArena('desert')}
+                          className={`p-4 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer outline-none ${
+                            selectedArena === 'desert'
+                              ? 'border-orange-500 bg-orange-950/20 shadow-lg shadow-orange-500/10'
+                              : 'border-slate-800 bg-slate-950/50 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500/5 rounded-full blur-xl pointer-events-none"></div>
+                          <div className="text-xs font-mono font-bold tracking-wider text-orange-400 uppercase">Sandstorm Wastes</div>
+                          <div className="text-[9px] text-slate-500 font-mono leading-relaxed mt-2 uppercase">Sunset lighting, clay terracotta fog, sandstone obelisks.</div>
+                          <div className={`w-2 h-2 rounded-full absolute top-3.5 right-3.5 ${
+                            selectedArena === 'desert' ? 'bg-orange-500 shadow-[0_0_8px_#ea580c]' : 'bg-slate-800'
+                          }`}></div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {roomAction === 'join' && (
+                  <div className="space-y-2 animate-fade-in">
+                    <label className="block text-[10px] font-mono tracking-widest text-slate-400 uppercase">Enter Dynamic Sector Key</label>
+                    <input
+                      type="text"
+                      maxLength={8}
+                      value={roomCodeInput}
+                      onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase().trim())}
+                      placeholder="ENTER PRIVATE CODE (E.G. XJ98F)..."
+                      className="w-full px-4 py-3 bg-slate-950 border border-slate-800 focus:border-amber-500/80 rounded-lg outline-none transition-all text-amber-400 font-mono text-center text-lg tracking-[0.3em] uppercase"
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               id="join-btn"
               type="submit"
-              className="w-full py-3.5 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 font-extrabold rounded-lg transition-all shadow-lg shadow-cyan-900/10 uppercase tracking-widest text-xs cursor-pointer border-0 active:scale-[0.99]"
+              className={`w-full py-3.5 text-slate-950 font-extrabold rounded-lg transition-all shadow-lg uppercase tracking-widest text-xs cursor-pointer border-0 active:scale-[0.99] ${
+                matchMode === 'public'
+                  ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 shadow-cyan-900/10'
+                  : roomAction === 'create'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 shadow-cyan-900/10'
+                    : 'bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 shadow-amber-900/10'
+              }`}
             >
-              Initialize Combat Connection
+              {matchMode === 'public'
+                ? 'Initialize Combat Connection'
+                : roomAction === 'create'
+                  ? 'Establish Custom Private Sector'
+                  : 'Synchronise Private Gateway'}
             </button>
           </form>
           
@@ -266,6 +467,7 @@ export default function App() {
         players={Object.values(gameState.players)} 
         bots={gameState.bots}
         arenaType={arenaType}
+        roomCode={activeRoomCode || undefined}
       />
 
       {/* Pause Menu Overlay */}
@@ -289,6 +491,12 @@ export default function App() {
                 <span>SIMULATION SECTOR:</span>
                 <span className="text-white font-bold uppercase">{arenaType}</span>
               </div>
+              {activeRoomCode && (
+                <div className="flex justify-between border-b border-slate-800 pb-2">
+                  <span>NEURAL LINK CODE:</span>
+                  <span className="text-amber-400 font-bold">{activeRoomCode}</span>
+                </div>
+              )}
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span>SECTOR SCORE:</span>
                 <span className="text-white font-bold">{me?.score}</span>
@@ -323,8 +531,12 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
+                  socket.emit('player:leave');
                   setIsJoined(false);
                   setIsPaused(false);
+                  setGameState(null);
+                  setMyId(null);
+                  setActiveRoomCode(null);
                   audioSynth.stopBackgroundMusic();
                 }}
                 className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg transition-all uppercase text-xs tracking-wider pointer-events-auto active:scale-98 cursor-pointer border-0"

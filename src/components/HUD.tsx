@@ -6,9 +6,10 @@ interface Props {
   players: Player[];
   bots: Bot[];
   arenaType: 'space' | 'desert';
+  roomCode?: string;
 }
 
-export default function HUD({ me, players, bots, arenaType }: Props) {
+export default function HUD({ me, players, bots, arenaType, roomCode }: Props) {
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
   const currentWeapon = WEAPONS[me.currentWeapon || WeaponType.PISTOL];
 
@@ -157,6 +158,11 @@ export default function HUD({ me, players, bots, arenaType }: Props) {
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
           </div>
           <div>Sector: <span className="text-white font-bold">{arenaType === 'desert' ? 'SANDSTORM WASTES' : 'NEON VOID'}</span></div>
+          {roomCode && (
+            <div className="text-amber-400 font-bold border border-amber-500/30 px-1.5 py-0.5 rounded bg-amber-500/5 mt-0.5 mb-0.5 text-center tracking-widest animate-pulse">
+              Link Key: {roomCode}
+            </div>
+          )}
           <div>Active Hostiles: <span className="text-red-500 font-bold">{activeBots.length} BOTS</span></div>
           <div>Remote Pilots: <span className="text-amber-400 font-bold">{otherPlayers.length} UNITS</span></div>
           

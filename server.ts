@@ -31,6 +31,11 @@ async function startServer() {
     desert: { players: {}, projectiles: [], bots: [] }
   };
 
+  const roomArenas: Record<string, 'space' | 'desert'> = {
+    space: 'space',
+    desert: 'desert'
+  };
+
   const NUM_BOTS = 3;
   const spawnBot = (arena: string) => {
     const state = states[arena];
@@ -51,10 +56,37 @@ async function startServer() {
   }
 
   io.on("connection", (socket) => {
-    socket.on("player:join", (name, arena) => {
-      const chosenArena = arena === "desert" ? "desert" : "space";
-      socket.join(chosenArena);
-      socket.data.arena = chosenArena;
+    socket.on("player:join", (name, arena, roomCode) => {
+      let chosenArena: 'space' | 'desert' = arena === "desert" ? "desert" : "space";
+      let roomKey: string = chosenArena;
+
+      if (roomCode) {
+        const formattedCode = roomCode.toUpperCase().trim();
+        roomKey = `room-${formattedCode}`;
+
+        if (arena === '') {
+          // Player is JOINING an existing room
+          if (!states[roomKey]) {
+            socket.emit("room:error", "Neural connection code not found. Please verify the code.");
+            return;
+          }
+          chosenArena = roomArenas[roomKey] || 'space';
+        } else {
+          // Player is CREATING a room with an arena style
+          if (!states[roomKey]) {
+            states[roomKey] = { players: {}, projectiles: [], bots: [] };
+            roomArenas[roomKey] = chosenArena;
+            
+            // Spawn initial bots for this custom private room
+            for (let i = 0; i < NUM_BOTS; i++) {
+              spawnBot(roomKey);
+            }
+          }
+        }
+      }
+
+      socket.join(roomKey);
+      socket.data.arena = roomKey;
 
       const player: Player = {
         id: socket.id,
@@ -66,9 +98,9 @@ async function startServer() {
         currentWeapon: WeaponType.PISTOL
       };
 
-      states[chosenArena].players[socket.id] = player;
-      socket.emit("game:init", states[chosenArena], socket.id, chosenArena);
-      socket.to(chosenArena).emit("player:joined", player);
+      states[roomKey].players[socket.id] = player;
+      socket.emit("game:init", states[roomKey], socket.id, chosenArena, roomCode ? roomCode.toUpperCase().trim() : undefined);
+      socket.to(roomKey).emit("player:joined", player);
     });
 
     socket.on("player:update", (data) => {
@@ -187,13 +219,27 @@ async function startServer() {
       }
     });
 
-    socket.on("disconnect", () => {
+    const handleLeave = () => {
       const arena = socket.data.arena;
       if (arena && states[arena]) {
         delete states[arena].players[socket.id];
         io.to(arena).emit("player:left", socket.id);
+
+        // Memory cleanup for dynamic empty rooms
+        if (arena.startsWith("room-")) {
+          const numActivePlayers = Object.keys(states[arena].players).length;
+          if (numActivePlayers === 0) {
+            delete states[arena];
+            delete roomArenas[arena];
+            console.log(`[CLEANUP] Deleted empty dynamic room: ${arena}`);
+          }
+        }
       }
-    });
+      socket.data.arena = undefined;
+    };
+
+    socket.on("player:leave", handleLeave);
+    socket.on("disconnect", handleLeave);
   });
 
   // Game Loop
@@ -201,7 +247,7 @@ async function startServer() {
     const now = Date.now();
     const dt = 1 / TICK_RATE;
 
-    for (const arena of ["space", "desert"]) {
+    for (const arena in states) {
       const state = states[arena];
 
       // Respawn dead players after 10 seconds
