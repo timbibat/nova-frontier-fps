@@ -12,7 +12,8 @@ import ProjectileRenderer from './components/ProjectileRenderer.tsx';
 import { audioSynth } from './utils/audio.ts';
 import { initWasm } from './utils/wasmLoader.ts';
 
-const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io();
+const backendUrl = (import.meta as any).env?.VITE_BACKEND_URL || undefined;
+const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(backendUrl);
 
 const generateRoomCode = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
