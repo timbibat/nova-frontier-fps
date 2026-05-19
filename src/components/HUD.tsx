@@ -1,5 +1,8 @@
+import { useState, useEffect, useRef } from 'react';
+import * as THREE from 'three';
 import { Player, WeaponType, Bot } from '../types.ts';
 import { WEAPONS } from '../constants.ts';
+import { getRadarCoordinates } from '../utils/wasmLoader.ts';
 
 interface Props {
   me: Player;
@@ -13,53 +16,132 @@ export default function HUD({ me, players, bots, arenaType, roomCode }: Props) {
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
   const currentWeapon = WEAPONS[me.currentWeapon || WeaponType.PISTOL];
 
-  const MAX_RANGE = 45; // Max tracking distance in world units shown on radar
+  // Refs to always read the latest props inside requestAnimationFrame
+  const playersRef = useRef<Player[]>(players);
+  const botsRef = useRef<Bot[]>(bots);
+
+  // Sync refs when props change
+  playersRef.current = players;
+  botsRef.current = bots;
+
+  const MAX_RANGE = 25; // Matching radar visual boundary limit
 
   const otherPlayers = players.filter((p) => p.id !== me.id && p.health > 0);
   const activeBots = bots ? bots.filter((b) => b.health > 0) : [];
 
-  const mePos = me.position || [0, 0, 0];
-  const yaw = me.rotation ? me.rotation[1] : 0;
-  const cosYaw = Math.cos(yaw);
-  const sinYaw = Math.sin(yaw);
+  const interpolatedPositions = useRef<Record<string, [number, number]>>({});
 
-  const getRadarCoords = (targetPos: [number, number, number], isBot: boolean, id: string) => {
-    const dx = targetPos[0] - mePos[0];
-    const dz = targetPos[2] - mePos[2];
-    const dist = Math.sqrt(dx * dx + dz * dz);
+  useEffect(() => {
+    let active = true;
 
-    // Transform absolute world coordinate delta by player's rotation
-    const rx = dx * cosYaw - dz * sinYaw;
-    const ry = dx * sinYaw + dz * cosYaw;
+    // High-performance helper to position and style a single radar blip element
+    const updateBlipElement = (
+      id: string,
+      tx: number,
+      tz: number,
+      entityId: string,
+      mePos: number[],
+      cosYaw: number,
+      sinYaw: number
+    ) => {
+      const el = document.getElementById(id);
+      if (!el) return;
 
-    const isClamped = dist > MAX_RANGE;
-    const radarDist = Math.min(dist, MAX_RANGE);
+      // Smoothly interpolate the 2D target position by 0.2 to match WebGL 3D models exactly
+      let currentPos = interpolatedPositions.current[entityId];
+      if (!currentPos) {
+        currentPos = [tx, tz];
+      } else {
+        currentPos[0] += (tx - currentPos[0]) * 0.2;
+        currentPos[1] += (tz - currentPos[1]) * 0.2;
+      }
+      interpolatedPositions.current[entityId] = currentPos;
 
-    const displayX = (rx / (dist || 1)) * radarDist;
-    const displayY = (ry / (dist || 1)) * radarDist;
+      const coords = getRadarCoordinates(
+        currentPos[0],
+        currentPos[1],
+        mePos[0],
+        mePos[2],
+        cosYaw,
+        sinYaw,
+        MAX_RANGE
+      );
 
-    // Convert display position to percentages where (50, 50) is center
-    const left = 50 + (displayX / MAX_RANGE) * 50;
-    const top = 50 + (displayY / MAX_RANGE) * 50;
+      el.style.left = `${coords.left}%`;
+      el.style.top = `${coords.top}%`;
+      el.style.display = 'block';
 
-    // Convert angle to degrees for arrow rotation (standard points UP)
-    const rotationDeg = Math.atan2(displayY, displayX) * (180 / Math.PI) + 90;
+      const arrowContainer = el.querySelector('.radar-blip-arrow-container') as HTMLElement;
+      const circleContainer = el.querySelector('.radar-blip-circle-container') as HTMLElement;
 
-    return {
-      id,
-      left,
-      top,
-      isClamped,
-      isBot,
-      rotationDeg,
-      dist,
+      if (coords.isClamped) {
+        if (arrowContainer) arrowContainer.style.display = 'flex';
+        if (circleContainer) circleContainer.style.display = 'none';
+        const arrow = el.querySelector('.radar-blip-arrow') as HTMLElement;
+        if (arrow) arrow.style.transform = `rotate(${coords.rotationDeg}deg)`;
+      } else {
+        if (arrowContainer) arrowContainer.style.display = 'none';
+        if (circleContainer) circleContainer.style.display = 'flex';
+      }
     };
-  };
 
-  const radarTargets = [
-    ...otherPlayers.map((p) => getRadarCoords(p.position, false, p.id)),
-    ...activeBots.map((b) => getRadarCoords(b.position, true, b.id)),
-  ];
+    const updateRadar = () => {
+      if (!active) return;
+      const camera = (window as any).localCamera;
+      if (camera) {
+        const mePos = [camera.position.x, camera.position.y, camera.position.z];
+        
+        // Calculate robust camera forward vector on the horizontal plane
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        const yaw = Math.atan2(-dir.x, -dir.z);
+        const cosYaw = Math.cos(yaw);
+        const sinYaw = Math.sin(yaw);
+
+        // Update player blips directly in the DOM for zero delay
+        playersRef.current.forEach((player) => {
+          const el = document.getElementById(`radar-blip-player-${player.id}`);
+          if (player.id === me.id || player.health <= 0) {
+            if (el) el.style.display = 'none';
+            return;
+          }
+          updateBlipElement(
+            `radar-blip-player-${player.id}`,
+            player.position[0],
+            player.position[2],
+            player.id,
+            mePos,
+            cosYaw,
+            sinYaw
+          );
+        });
+
+        // Update bot blips directly in the DOM for zero delay
+        botsRef.current.forEach((bot) => {
+          const el = document.getElementById(`radar-blip-bot-${bot.id}`);
+          if (bot.health <= 0) {
+            if (el) el.style.display = 'none';
+            return;
+          }
+          updateBlipElement(
+            `radar-blip-bot-${bot.id}`,
+            bot.position[0],
+            bot.position[2],
+            bot.id,
+            mePos,
+            cosYaw,
+            sinYaw
+          );
+        });
+      }
+      requestAnimationFrame(updateRadar);
+    };
+
+    requestAnimationFrame(updateRadar);
+    return () => {
+      active = false;
+    };
+  }, [me.id]);
 
   return (
     <div className="absolute inset-0 pointer-events-none font-mono">
@@ -101,52 +183,58 @@ export default function HUD({ me, players, bots, arenaType, roomCode }: Props) {
             </svg>
           </div>
 
-          {/* Target Blips */}
-          {radarTargets.map((target) => (
+          {/* Player Target Blips Pool */}
+          {otherPlayers.map((player) => (
             <div
-              key={target.id}
-              className="absolute pointer-events-none z-10 transition-all duration-75"
+              key={player.id}
+              id={`radar-blip-player-${player.id}`}
+              className="absolute pointer-events-none z-10"
               style={{
-                left: `${target.left}%`,
-                top: `${target.top}%`,
-                transform: 'translate(-50%, -50%)',
+                transform: 'translate(-50%, -50%)'
               }}
             >
-              {target.isClamped ? (
-                // Out of range indicators (pointing arrows along the radar edge)
-                <div 
-                  className="w-3 h-3 flex items-center justify-center"
-                  style={{
-                    transform: `rotate(${target.rotationDeg}deg)`,
-                  }}
+              {/* Out of range arrow */}
+              <div className="w-3 h-3 flex items-center justify-center radar-blip-arrow-container">
+                <svg 
+                  className="w-2.5 h-2.5 text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.8)] radar-blip-arrow"
+                  viewBox="0 0 24 24" 
+                  fill="currentColor"
                 >
-                  <svg 
-                    className={`w-2.5 h-2.5 ${
-                      target.isBot 
-                        ? 'text-red-500 drop-shadow-[0_0_3px_rgba(239,68,68,0.8)]' 
-                        : 'text-amber-500 drop-shadow-[0_0_3px_rgba(245,158,11,0.8)]'
-                    }`} 
-                    viewBox="0 0 24 24" 
-                    fill="currentColor"
-                  >
-                    <path d="M12 2L2 22h20L12 2z" />
-                  </svg>
-                </div>
-              ) : (
-                // In range indicators (flashing blips)
-                <div className="relative flex items-center justify-center w-3 h-3">
-                  {target.isBot && (
-                    <div className="absolute w-5 h-5 rounded-full border border-red-500/20 animate-ping opacity-60 pointer-events-none"></div>
-                  )}
-                  <div 
-                    className={`w-2 h-2 rounded-full shadow-lg ${
-                      target.isBot 
-                        ? 'bg-red-500 shadow-red-500/50 animate-pulse' 
-                        : 'bg-amber-500 shadow-amber-500/50'
-                    }`}
-                  />
-                </div>
-              )}
+                  <path d="M12 2L2 22h20L12 2z" />
+                </svg>
+              </div>
+              {/* In range circle */}
+              <div className="relative flex items-center justify-center w-3 h-3 radar-blip-circle-container">
+                <div className="w-2 h-2 rounded-full shadow-lg bg-amber-500 shadow-amber-500/50" />
+              </div>
+            </div>
+          ))}
+
+          {/* Bot Target Blips Pool */}
+          {activeBots.map((bot) => (
+            <div
+              key={bot.id}
+              id={`radar-blip-bot-${bot.id}`}
+              className="absolute pointer-events-none z-10"
+              style={{
+                transform: 'translate(-50%, -50%)'
+              }}
+            >
+              {/* Out of range arrow */}
+              <div className="w-3 h-3 flex items-center justify-center radar-blip-arrow-container">
+                <svg 
+                  className="w-2.5 h-2.5 text-red-500 drop-shadow-[0_0_3px_rgba(239,68,68,0.8)] radar-blip-arrow"
+                  viewBox="0 0 24 24" 
+                  fill="currentColor"
+                >
+                  <path d="M12 2L2 22h20L12 2z" />
+                </svg>
+              </div>
+              {/* In range circle */}
+              <div className="relative flex items-center justify-center w-3 h-3 radar-blip-circle-container">
+                <div className="absolute w-5 h-5 rounded-full border border-red-500/20 animate-ping opacity-60 pointer-events-none"></div>
+                <div className="w-2 h-2 rounded-full shadow-lg bg-red-500 shadow-red-500/50 animate-pulse" />
+              </div>
             </div>
           ))}
         </div>

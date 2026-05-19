@@ -10,6 +10,7 @@ import HUD from './components/HUD.tsx';
 import BotRenderer from './components/BotRenderer.tsx';
 import ProjectileRenderer from './components/ProjectileRenderer.tsx';
 import { audioSynth } from './utils/audio.ts';
+import { initWasm } from './utils/wasmLoader.ts';
 
 const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io();
 
@@ -50,6 +51,9 @@ export default function App() {
   }, [matchMode, roomAction, createdRoomCode]);
 
   useEffect(() => {
+    // Initialise WebAssembly C++ engine (with high-performance polyfill fallback)
+    initWasm();
+
     socket.on('game:init', (state, id, arena, roomCode) => {
       setGameState(state);
       setMyId(id);

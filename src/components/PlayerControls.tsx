@@ -7,6 +7,7 @@ import { ClientToServerEvents, ServerToClientEvents, WeaponType } from '../types
 import { WEAPONS } from '../constants.ts';
 import WeaponModel from './WeaponModel.tsx';
 import { audioSynth } from '../utils/audio.ts';
+import { getProjectileVelocity, getMuzzlePosition } from '../utils/wasmLoader.ts';
 
 const SPEED = 10;
 const JUMP_FORCE = 12;
@@ -101,13 +102,23 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
           isSwinging.current = true;
           swingProgress.current = 0;
         } else {
-          const direction = new THREE.Vector3();
-          camera.getWorldDirection(direction);
+          // Calculate projectile velocity vector using quaternion rotation via C++ WASM
+          const q = camera.quaternion;
+          const velocityVector = getProjectileVelocity(q.x, q.y, q.z, q.w, 60);
           
+          // Calculate muzzle position using offset (offset to right: 0.25, down: -0.22, forward: -0.6) via C++ WASM
+          const muzzlePos = getMuzzlePosition(
+            camera.position.x,
+            camera.position.y,
+            camera.position.z,
+            q.x, q.y, q.z, q.w,
+            0.25, -0.22, -0.6
+          );
+
           socket.emit('player:shoot', {
             id: nanoid(),
-            position: [camera.position.x, camera.position.y - 0.2, camera.position.z],
-            velocity: [direction.x * 60, direction.y * 60, direction.z * 60],
+            position: muzzlePos,
+            velocity: velocityVector,
             damage: weapon.damage
           });
 
@@ -185,7 +196,8 @@ export default function PlayerControls({ socket, myId, initialPos, health }: Pro
       rotation: [camera.rotation.x, camera.rotation.y, camera.rotation.z],
       weapon: currentWeapon
     });
-
+    // Store camera globally for absolute zero-delay synchronous HUD tracking
+    (window as any).localCamera = camera;
     // Update weapon viewmodel position to follow camera
     if (weaponGroupRef.current) {
       weaponGroupRef.current.position.copy(camera.position);

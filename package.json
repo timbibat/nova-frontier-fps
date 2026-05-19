@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:wasm": "emcc src/cpp/collisions.cpp src/cpp/weapons.cpp src/cpp/radar.cpp -o public/wasm/collisions.js -s EXPORTED_FUNCTIONS=\"['_check_sphere_collision','_check_capsule_collision','_check_weapon_range','_get_velocity_x','_get_velocity_y','_get_velocity_z','_get_muzzle_pos_x','_get_muzzle_pos_y','_get_muzzle_pos_z','_get_weapon_damage_with_falloff','_get_radar_dist','_get_radar_left','_get_radar_top','_get_radar_rotation']\" -s MODULARIZE=1",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit"
   },
